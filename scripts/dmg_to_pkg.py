@@ -32,9 +32,11 @@ class DMGtoPKGConverter:
         """Mount DMG and return mount point"""
         print(f"  📀 Mounting DMG: {Path(dmg_path).name}")
         
-        # Mount the DMG
+        # Mount the DMG (always pipe 'Y\n' in case the dmg requires an agreement - Installomator pattern)
+        mount_cmd = f"echo 'Y'$'\\n' | hdiutil attach '{dmg_path}' -nobrowse -readonly"
         result = subprocess.run(
-            ['hdiutil', 'attach', dmg_path, '-nobrowse', '-noverify', '-noautoopen'],
+            mount_cmd,
+            shell=True,
             capture_output=True,
             text=True
         )

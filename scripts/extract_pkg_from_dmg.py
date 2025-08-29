@@ -22,8 +22,8 @@ def extract_pkg_from_dmg(dmg_path, output_dir=None):
         
         print(f"  📀 Mounting DMG: {dmg_path.name}")
         
-        # Mount the DMG (using yes to auto-accept license agreements)
-        mount_cmd = f"yes | hdiutil attach '{str(dmg_path)}' -nobrowse -noverify -noautoopen"
+        # Mount the DMG (always pipe 'Y\n' in case the dmg requires an agreement - Installomator pattern)
+        mount_cmd = f"echo 'Y'$'\\n' | hdiutil attach '{str(dmg_path)}' -nobrowse -readonly"
         result = subprocess.run(
             mount_cmd,
             shell=True,
