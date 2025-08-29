@@ -22,9 +22,11 @@ def extract_pkg_from_dmg(dmg_path, output_dir=None):
         
         print(f"  📀 Mounting DMG: {dmg_path.name}")
         
-        # Mount the DMG
+        # Mount the DMG (using yes to auto-accept license agreements)
+        mount_cmd = f"yes | hdiutil attach '{str(dmg_path)}' -nobrowse -noverify -noautoopen"
         result = subprocess.run(
-            ['hdiutil', 'attach', str(dmg_path), '-nobrowse', '-noverify', '-noautoopen'],
+            mount_cmd,
+            shell=True,
             capture_output=True,
             text=True
         )

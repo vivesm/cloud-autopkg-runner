@@ -71,9 +71,9 @@ def verify_dmg_signature(dmg_path, expected_team_id):
         # Use spctl to assess the DMG
         result = subprocess.run(
             ['spctl', '-a', '-vvv', '-t', 'open', '--context', 'context:primary-signature', str(dmg_path)],
-            capture_output=True,
-            text=True,
-            stderr=subprocess.STDOUT
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
         )
         
         # spctl returns 0 for valid signature
@@ -126,9 +126,9 @@ def extract_team_id(package_path):
     elif package_path.suffix.lower() == '.dmg':
         result = subprocess.run(
             ['spctl', '-a', '-vvv', '-t', 'open', '--context', 'context:primary-signature', str(package_path)],
-            capture_output=True,
-            text=True,
-            stderr=subprocess.STDOUT
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
         )
         
         team_id_pattern = r'origin=.*?\(([A-Z0-9]{10})\)'

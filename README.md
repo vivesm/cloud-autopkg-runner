@@ -4,8 +4,10 @@ A lightweight, cost-effective automation pipeline for downloading, validating, a
 
 ## ✨ Features
 
-- **🤖 Automated Downloads**: Direct downloads of Chrome, Firefox, and Zoom packages
-- **🔒 Security Validation**: SHA256 hash verification and VirusTotal malware scanning
+- **🤖 Automated Downloads**: Direct downloads of 6 enterprise macOS applications
+- **🔐 Code Signature Verification**: Team ID verification using Apple Developer certificates
+- **🔒 Security Scanning**: Optional VirusTotal malware scanning
+- **📦 Format Conversion**: Automatic DMG to PKG conversion for Jamf compatibility
 - **☁️ Jamf Pro Integration**: Automatic upload to your Jamf Pro server
 - **💰 Cost Effective**: Runs on Ubuntu ($0.008/minute) instead of macOS ($0.08/minute)
 - **📊 Detailed Reporting**: JSON reports and GitHub Actions summaries
@@ -13,11 +15,18 @@ A lightweight, cost-effective automation pipeline for downloading, validating, a
 
 ## 🎯 MVP Scope
 
-This MVP implementation focuses on:
-- 3 core applications (Chrome, Firefox, Zoom)
-- Basic security validation (hash + VirusTotal)
-- Simple Jamf Pro upload
-- Daily automated runs
+This MVP implementation includes:
+- **6 enterprise applications**: 
+  - Google Chrome
+  - Mozilla Firefox
+  - Zoom
+  - 1Password 8
+  - Jamf Connect
+  - Okta Verify
+- **Team ID verification** (more reliable than SHA256 - doesn't change between versions)
+- **DMG to PKG conversion** for apps distributed as disk images
+- **Simple Jamf Pro upload** with automatic format handling
+- **Daily automated runs** via GitHub Actions
 
 ## 📋 Prerequisites
 
@@ -46,16 +55,11 @@ JAMF_USERNAME=your_api_username
 JAMF_PASSWORD=your_api_password
 ```
 
-### 3. Update Package Hashes
+### 3. Configuration
 
-First, download packages to get their current SHA256 hashes:
+The pipeline uses Team ID verification by default, which is more reliable than SHA256 hashes since Team IDs don't change between app versions. 
 
-```bash
-# Test locally without upload
-VIRUSTOTAL_API_KEY=your_key ./test_local.sh --skip-upload
-```
-
-Update `config/apps.json` with the actual hashes shown in the output.
+Check `config/apps.json` to see the configured apps and their Team IDs.
 
 ### 4. Test Locally
 
@@ -90,13 +94,19 @@ cloud-autopkg-runner/
 │   └── workflows/
 │       └── autopkg-mvp.yml          # GitHub Actions workflow
 ├── scripts/
-│   ├── download_and_validate.py     # Download & security validation
-│   └── jamf_upload.py              # Jamf Pro upload
+│   ├── download_and_validate.py     # Download & signature verification
+│   ├── jamf_upload.py              # Jamf Pro upload
+│   ├── verify_signature.py         # Team ID verification
+│   ├── dmg_to_pkg.py              # DMG to PKG converter
+│   └── extract_pkg_from_dmg.py    # Extract PKG from DMG
 ├── config/
 │   └── apps.json                   # Application configurations
+├── reference/
+│   └── Installomator.sh           # Reference for 700+ app configs
 ├── downloads/                       # Downloaded packages (git-ignored)
 ├── reports/                        # Processing reports
 ├── test_local.sh                   # Local testing script
+├── FUTURE_FEATURES.md             # Roadmap and ideas
 └── README.md                       # This file
 ```
 
@@ -113,11 +123,25 @@ Configure applications in `config/apps.json`:
       "name": "GoogleChrome",
       "filename": "GoogleChrome.pkg",
       "url": "https://dl.google.com/chrome/...",
-      "sha256": "actual_hash_here"
+      "team_id": "EQHXZ8M8AV",
+      "notes": "Uses Team ID verification instead of SHA256"
+    },
+    {
+      "name": "JamfConnect",
+      "filename": "JamfConnect.dmg",
+      "url": "https://files.jamfconnect.com/JamfConnect.dmg",
+      "team_id": "483DWKW443",
+      "type": "pkgInDmg",
+      "notes": "PKG will be extracted from DMG"
     }
   ]
 }
 ```
+
+**Key Configuration Options:**
+- `team_id`: Apple Developer Team ID for signature verification (preferred)
+- `sha256`: SHA256 hash for verification (fallback if no team_id)
+- `type`: Package type (`pkg`, `dmg`, `pkgInDmg`)
 
 ### Workflow Schedule
 

@@ -6,52 +6,25 @@
    - All scripts created and tested
    - Configuration files ready
    - Documentation complete
+   - 6 enterprise apps configured
 
-2. **Local Testing** - DONE ✅
-   - Downloaded all packages successfully
-   - SHA256 hashes verified
-   - Configuration updated with correct hashes
+2. **Enhanced Security** - DONE ✅
+   - Team ID signature verification implemented
+   - DMG to PKG conversion added
+   - Code signature verification using Apple tools
+
+3. **Local Testing** - DONE ✅
+   - Downloaded all 6 packages successfully
+   - Signature verification tested with Team IDs
+   - No need to update hashes (Team IDs don't change)
+
+4. **GitHub Repository** - DONE ✅
+   - Repository created at https://github.com/vivesm/cloud-autopkg-runner
+   - Code pushed and tested
 
 ## 📋 Next Steps to Complete
 
-### Step 1: Create GitHub Repository
-
-#### Option A: Using GitHub Web Interface
-1. Go to https://github.com/new
-2. Repository name: `cloud-autopkg-runner`
-3. Description: `Automated macOS application patching pipeline for Jamf Pro using GitHub Actions`
-4. Make it Public
-5. DON'T initialize with README (we already have one)
-6. Click "Create repository"
-
-#### Option B: Using GitHub CLI (if installed)
-```bash
-# Install GitHub CLI if needed
-brew install gh
-
-# Authenticate
-gh auth login
-
-# Create repo and push
-gh repo create cloud-autopkg-runner --public \
-  --description "Automated macOS application patching pipeline for Jamf Pro using GitHub Actions" \
-  --push --source=.
-```
-
-### Step 2: Push Code to GitHub
-
-After creating the repository on GitHub:
-
-```bash
-# Add remote (replace YOUR_USERNAME with your GitHub username)
-git remote add origin https://github.com/YOUR_USERNAME/cloud-autopkg-runner.git
-
-# Push code
-git branch -M main
-git push -u origin main
-```
-
-### Step 3: Add GitHub Secrets
+### Step 1: Add GitHub Secrets ⚠️ REQUIRED
 
 Go to your repository on GitHub:
 1. Click **Settings** → **Secrets and variables** → **Actions**
@@ -141,10 +114,12 @@ export JAMF_PASSWORD="api-password"
 
 You'll know it's working when:
 1. ✅ GitHub Actions shows green checkmark
-2. ✅ All 3 apps show "success" in summary
-3. ✅ Artifacts contain reports and packages
-4. ✅ Email received (if configured)
-5. ✅ Packages appear in Jamf Pro
+2. ✅ All 6 apps show "success" in summary
+3. ✅ Code signatures verified with Team IDs
+4. ✅ DMG files auto-converted to PKG
+5. ✅ Artifacts contain reports and packages
+6. ✅ Email received (if configured)
+7. ✅ Packages appear in Jamf Pro
 
 ## 🐛 Troubleshooting
 
@@ -155,10 +130,10 @@ You'll know it's working when:
 - Verify username/password are correct
 - Ensure API user has package upload permissions
 
-**"Hash mismatch" errors**
-- Apps were updated by vendor
-- Re-run local test to get new hashes
-- Update `config/apps.json`
+**"Signature verification failed" errors**
+- Team ID might have changed (very rare)
+- Check signature with: `python3 scripts/verify_signature.py <package_file>`
+- Update Team ID in `config/apps.json` if needed
 
 **"VirusTotal timeout"**
 - Free tier rate limit (4/minute)
