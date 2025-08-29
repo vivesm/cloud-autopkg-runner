@@ -5,16 +5,16 @@
       "filename": "GoogleChrome.pkg",
       "version": "latest",
       "url": "https://dl.google.com/chrome/mac/stable/accept_tos%3Dhttps%253A%252F%252Fwww.google.com%252Fintl%252Fen_ph%252Fchrome%252Fterms%252F%26_and_accept_tos%3Dhttps%253A%252F%252Fpolicies.google.com%252Fterms/GoogleChrome.pkg",
-      "sha256": "054e948f1ecfa7612a7f6ba99d225eb37d7f60682aa123b44e291058c595abf8",
-      "notes": "Google Chrome browser - update hash after first download"
+      "team_id": "EQHXZ8M8AV",
+      "notes": "Google Chrome browser - verified by team ID"
     },
     {
       "name": "Firefox",
       "filename": "Firefox.pkg",
       "version": "latest",
       "url": "https://download.mozilla.org/?product=firefox-pkg-latest-ssl&os=osx&lang=en-US",
-      "sha256": "5112348f4fe990f79b2b62bf39d96c1191f94b3b5c16838a61fbdd594b247452",
-      "notes": "Mozilla Firefox browser PKG installer - update hash after first download"
+      "team_id": "43AQ936H96",
+      "notes": "Mozilla Firefox browser PKG - verified by team ID"
     },
     {
       "name": "Zoom",
@@ -22,13 +22,40 @@
       "version": "latest",
       "url": "https://zoom.us/client/latest/Zoom.pkg",
       "sha256": "96a494270ecfc139b909510e8fd1a6e259db018a38293f0fde4f851fd96adfe2",
+      "team_id": "BJ4HAAB9B3",
       "notes": "Zoom video conferencing - update hash after first download"
+    },
+    {
+      "name": "1Password",
+      "filename": "1Password.pkg",
+      "version": "latest",
+      "url": "https://downloads.1password.com/mac/1Password.pkg",
+      "team_id": "2BUA8C4S2C",
+      "notes": "1Password 8 password manager"
+    },
+    {
+      "name": "JamfConnect",
+      "filename": "JamfConnect.dmg",
+      "version": "latest",
+      "url": "https://files.jamfconnect.com/JamfConnect.dmg",
+      "team_id": "483DWKW443",
+      "type": "pkgInDmg",
+      "notes": "Jamf Connect identity provider integration"
+    },
+    {
+      "name": "OktaVerify",
+      "filename": "OktaVerify.pkg",
+      "version": "latest",
+      "url": "https://okta.okta.com/api/v1/artifacts/OKTA_VERIFY_MACOS/download?releaseChannel=GA&packageType=PKG",
+      "team_id": "B7F62B65BN",
+      "notes": "Okta Verify multi-factor authentication"
     }
   ],
   "config": {
     "virustotal_threshold": 5,
     "jamf_category": "Testing",
     "timeout_seconds": 300,
-    "retry_attempts": 3
+    "retry_attempts": 3,
+    "use_signature_verification": true
   }
 }

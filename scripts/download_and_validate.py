@@ -12,6 +12,9 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+import subprocess
+import tempfile
+import shutil
 
 class MVPProcessor:
     def __init__(self):
@@ -51,6 +54,9 @@ class MVPProcessor:
             }
             
             try:
+                # Set current app type for download processing
+                self.current_app_type = app.get('type', 'pkg')
+                
                 # Step 1: Download
                 print(f"  ⬇️  Downloading {app['filename']}...")
                 filepath = self.download(app['url'], app['filename'])
@@ -58,20 +64,31 @@ class MVPProcessor:
                 app_result['path'] = str(filepath)
                 app_result['size_mb'] = round(filepath.stat().st_size / 1024 / 1024, 2)
                 
-                # Step 2: Verify hash
-                print(f"  🔐 Verifying SHA256 hash...")
-                actual_hash = self.calculate_hash(filepath)
-                
-                if app.get('sha256'):
+                # Step 2: Verify package integrity
+                # Prefer Team ID verification over SHA256 if available
+                if app.get('team_id'):
+                    print(f"  🔐 Verifying code signature with Team ID...")
+                    if self.verify_signature(filepath, app['team_id']):
+                        print(f"  ✅ Signature verified with Team ID: {app['team_id']}")
+                        app_result['signature_verification'] = 'success'
+                        app_result['team_id'] = app['team_id']
+                    else:
+                        raise Exception(f"Signature verification failed for Team ID: {app['team_id']}")
+                elif app.get('sha256') and app['sha256'] != 'WILL_BE_DIFFERENT_AFTER_CONVERSION':
+                    print(f"  🔐 Verifying SHA256 hash...")
+                    actual_hash = self.calculate_hash(filepath)
+                    
                     if actual_hash == app['sha256']:
                         print(f"  ✅ Hash verified: {actual_hash[:16]}...")
                         app_result['hash_verification'] = 'success'
                     else:
                         raise Exception(f"Hash mismatch! Expected: {app['sha256'][:16]}..., Got: {actual_hash[:16]}...")
                 else:
-                    print(f"  ⚠️  No expected hash provided, actual: {actual_hash[:16]}...")
+                    print(f"  ⚠️  No verification configured (no team_id or sha256)")
+                    actual_hash = self.calculate_hash(filepath)
                     app_result['hash_verification'] = 'skipped'
                     app_result['actual_hash'] = actual_hash
+                    print(f"     Actual hash: {actual_hash}")
                 
                 # Step 3: VirusTotal scan
                 if self.vt_api_key:
@@ -151,8 +168,132 @@ class MVPProcessor:
                     print(f"    Progress: {percent:.1f}%", end='\r')
         
         print(f"    Downloaded: {filepath.name} ({round(filepath.stat().st_size / 1024 / 1024, 2)} MB)")
-        return filepath
         
+        # Handle different package types
+        if str(filepath).lower().endswith('.dmg'):
+            # Check if this is a pkgInDmg type (like Jamf Connect)
+            if hasattr(self, 'current_app_type') and self.current_app_type == 'pkgInDmg':
+                pkg_path = self.extract_pkg_from_dmg(filepath)
+                if pkg_path:
+                    return pkg_path
+                else:
+                    print(f"    ⚠️  PKG extraction from DMG failed")
+            else:
+                # Regular DMG - convert to PKG
+                pkg_path = self.convert_dmg_to_pkg(filepath)
+                if pkg_path:
+                    return pkg_path
+                else:
+                    print(f"    ⚠️  DMG to PKG conversion failed, keeping DMG")
+        
+        return filepath
+    
+    def extract_pkg_from_dmg(self, dmg_path):
+        """Extract PKG from DMG (for apps like Jamf Connect)"""
+        print(f"  📦 Extracting PKG from DMG...")
+        
+        try:
+            extractor_script = Path(__file__).parent / 'extract_pkg_from_dmg.py'
+            
+            if not extractor_script.exists():
+                print(f"    ⚠️  Extractor script not found")
+                return None
+            
+            result = subprocess.run(
+                [sys.executable, str(extractor_script), str(dmg_path), str(dmg_path.parent)],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Find the extracted PKG
+                dmg_stem = dmg_path.stem
+                possible_names = [
+                    dmg_path.with_suffix('.pkg'),
+                    dmg_path.parent / f"{dmg_stem}.pkg",
+                    dmg_path.parent / "JamfConnect.pkg",  # Common specific names
+                    dmg_path.parent / "Installer.pkg"
+                ]
+                
+                for pkg_path in possible_names:
+                    if pkg_path.exists():
+                        print(f"    ✅ Extracted PKG: {pkg_path.name}")
+                        return pkg_path
+                
+                print(f"    ⚠️  PKG file not found after extraction")
+                return None
+            else:
+                print(f"    ⚠️  Extraction failed: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            print(f"    ⚠️  Extraction error: {str(e)}")
+            return None
+    
+    def convert_dmg_to_pkg(self, dmg_path):
+        """Convert DMG to PKG for Jamf compatibility"""
+        print(f"  🔄 Converting DMG to PKG for Jamf compatibility...")
+        
+        try:
+            # Use the dmg_to_pkg.py script
+            converter_script = Path(__file__).parent / 'dmg_to_pkg.py'
+            
+            if not converter_script.exists():
+                print(f"    ⚠️  Converter script not found, skipping conversion")
+                return None
+            
+            # Run the conversion
+            result = subprocess.run(
+                [sys.executable, str(converter_script), str(dmg_path), str(dmg_path.parent)],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Find the created PKG file
+                pkg_path = dmg_path.with_suffix('.pkg')
+                if pkg_path.exists():
+                    # Remove the original DMG to save space
+                    dmg_path.unlink()
+                    print(f"    ✅ Converted to PKG: {pkg_path.name}")
+                    return pkg_path
+                else:
+                    print(f"    ⚠️  PKG file not found after conversion")
+                    return None
+            else:
+                print(f"    ⚠️  Conversion failed: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            print(f"    ⚠️  Conversion error: {str(e)}")
+            return None
+        
+    def verify_signature(self, filepath, team_id):
+        """Verify package signature using Team ID"""
+        verify_script = Path(__file__).parent / 'verify_signature.py'
+        
+        if not verify_script.exists():
+            print(f"    ⚠️  Signature verification script not found")
+            return False
+        
+        try:
+            result = subprocess.run(
+                [sys.executable, str(verify_script), str(filepath), team_id],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"  🔐 {result.stdout.strip()}")
+                return True
+            else:
+                print(f"  ❌ {result.stdout.strip()}")
+                return False
+                
+        except Exception as e:
+            print(f"    ⚠️  Signature verification error: {str(e)}")
+            return False
+    
     def calculate_hash(self, filepath):
         """Calculate SHA256 hash of a file"""
         sha256 = hashlib.sha256()
