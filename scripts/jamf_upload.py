@@ -64,6 +64,12 @@ class JamfUploader:
             print("❌ Not authenticated")
             return False
         
+        # Check if file is a PKG (Jamf doesn't accept DMG files)
+        if not str(filepath).endswith('.pkg'):
+            print(f"\n⚠️  Skipping {app_name} - Jamf Pro only accepts PKG files, not {Path(filepath).suffix} files")
+            print(f"   File: {filepath}")
+            return False
+        
         print(f"\n📤 Uploading {app_name} to Jamf Pro...")
         
         # Check if package already exists
@@ -268,7 +274,15 @@ class JamfUploader:
                         'error': 'File not found'
                     })
             else:
-                print(f"⏭️  Skipping {app.get('name', 'unknown')} - validation failed")
+                if app.get('status') == 'success' and app.get('path', '').endswith('.dmg'):
+                    print(f"⏭️  Skipping {app.get('name', 'unknown')} - DMG files cannot be uploaded to Jamf Pro")
+                    upload_results.append({
+                        'name': app['name'],
+                        'uploaded': False,
+                        'error': 'DMG format not supported by Jamf Pro'
+                    })
+                else:
+                    print(f"⏭️  Skipping {app.get('name', 'unknown')} - validation failed")
         
         # Print summary
         print("\n" + "=" * 60)

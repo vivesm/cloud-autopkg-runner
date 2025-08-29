@@ -10,11 +10,11 @@
     },
     {
       "name": "Firefox",
-      "filename": "Firefox.dmg",
+      "filename": "Firefox.pkg",
       "version": "latest",
-      "url": "https://download.mozilla.org/?product=firefox-latest-ssl&os=osx&lang=en-US",
-      "sha256": "de41866c94d064a20cd787d89203c5f646fe0278da13c44605733ce205680965",
-      "notes": "Mozilla Firefox browser - update hash after first download"
+      "url": "https://download.mozilla.org/?product=firefox-pkg-latest-ssl&os=osx&lang=en-US",
+      "sha256": "5112348f4fe990f79b2b62bf39d96c1191f94b3b5c16838a61fbdd594b247452",
+      "notes": "Mozilla Firefox browser PKG installer - update hash after first download"
     },
     {
       "name": "Zoom",
