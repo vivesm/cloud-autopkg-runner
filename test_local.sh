@@ -121,11 +121,13 @@ if [ "$SKIP_UPLOAD" = false ]; then
 fi
 
 # Install Python dependencies
-print_info "Installing Python dependencies..."
-pip3 install -q requests pyyaml 2>/dev/null || {
-    print_warning "Could not install dependencies with pip3, trying pip..."
-    pip install -q requests pyyaml
-}
+print_info "Setting up Python environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+    print_success "Virtual environment created"
+fi
+source venv/bin/activate
+pip install -q requests pyyaml 2>/dev/null || pip install requests pyyaml
 print_success "Dependencies installed"
 
 # Create required directories
