@@ -1,0 +1,57 @@
+Comment: Recipe override for Mozilla Firefox with Jamf Pro upload
+Identifier: com.github.cloud-autopkg.jamf.Firefox
+ParentRecipe: com.github.autopkg.download.firefox_EN
+MinimumVersion: '2.3'
+
+Input:
+  NAME: Firefox
+  CATEGORY: Browsers
+  POLICY_CATEGORY: Testing
+  POLICY_NAME: 'Install Latest %NAME%'
+  POLICY_TEMPLATE: Policy-install-latest.xml
+  SELF_SERVICE_DISPLAY_NAME: 'Install Latest %NAME%'
+  SELF_SERVICE_DESCRIPTION: Mozilla Firefox is a free and open-source web browser.
+  UPDATE_PREDICATE: pkg_uploaded == False
+  REPLACE_POLICY: 'True'
+  REPLACE_PKG: 'True'
+  LOCALE: en_US
+  RELEASE: latest
+  
+  # Security validation requirements
+  CODE_SIGN_VERIFICATION_EXPECTED_AUTHORITY_NAMES:
+    - 'Developer ID Installer: Mozilla Corporation (43AQ936H96)'
+    - 'Developer ID Certification Authority'
+    - 'Apple Root CA'
+  
+  VIRUSTOTAL_ALWAYS_REPORT: 'true'
+  VIRUSTOTAL_MAX_THRESHOLD: 5
+
+Process:
+  - Processor: CodeSignatureVerifier
+    Arguments:
+      input_path: '%pathname%'
+      expected_authority_names: '%CODE_SIGN_VERIFICATION_EXPECTED_AUTHORITY_NAMES%'
+      
+  - Processor: VirusTotalAnalyzer
+    Arguments:
+      input_path: '%pathname%'
+      always_report: '%VIRUSTOTAL_ALWAYS_REPORT%'
+      max_threshold: '%VIRUSTOTAL_MAX_THRESHOLD%'
+      
+  - Processor: com.github.grahampugh.jamf-upload.processors/JamfPackageUploader
+    Arguments:
+      pkg_category: '%CATEGORY%'
+      replace_pkg: '%REPLACE_PKG%'
+      
+  - Processor: StopProcessingIf
+    Arguments:
+      predicate: '%UPDATE_PREDICATE%'
+      
+  - Processor: com.github.grahampugh.jamf-upload.processors/JamfPolicyUploader
+    Arguments:
+      policy_name: '%POLICY_NAME%'
+      policy_category: '%POLICY_CATEGORY%'
+      policy_template: '%POLICY_TEMPLATE%'
+      replace_policy: '%REPLACE_POLICY%'
+      
+  - Processor: EndOfCheckSummary

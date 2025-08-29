@@ -1,0 +1,132 @@
+name: Manual AutoPkg Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      application:
+        description: 'Application to process'
+        required: true
+        type: choice
+        options:
+          - GoogleChrome
+          - Firefox
+          - Zoom
+          - Slack
+          - MicrosoftTeams
+          - All
+      upload_to_jamf:
+        description: 'Upload to Jamf Pro'
+        required: true
+        type: boolean
+        default: false
+      force_update:
+        description: 'Force update even if version exists'
+        required: false
+        type: boolean
+        default: false
+      target_policy:
+        description: 'Target Jamf Policy (leave empty for default)'
+        required: false
+        type: string
+
+jobs:
+  validate-inputs:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.validate.outputs.proceed }}
+    
+    steps:
+      - name: Validate Parameters
+        id: validate
+        run: |
+          echo "Application: ${{ inputs.application }}"
+          echo "Upload to Jamf: ${{ inputs.upload_to_jamf }}"
+          echo "Force Update: ${{ inputs.force_update }}"
+          
+          if [[ "${{ inputs.upload_to_jamf }}" == "true" && -z "${{ secrets.JAMF_URL }}" ]]; then
+            echo "Error: Jamf credentials not configured"
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "proceed=true" >> $GITHUB_OUTPUT
+
+  process-application:
+    name: Process ${{ inputs.application }}
+    needs: validate-inputs
+    if: needs.validate-inputs.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Environment
+        run: |
+          # Create working directories
+          mkdir -p reports
+          mkdir -p cache
+          mkdir -p downloads
+      
+      - name: Build AutoPkg Container
+        run: |
+          docker build -t autopkg-runner:manual ./docker
+      
+      - name: Run AutoPkg for ${{ inputs.application }}
+        run: |
+          RECIPE_LIST="${{ inputs.application }}"
+          if [[ "${{ inputs.application }}" == "All" ]]; then
+            RECIPE_LIST=$(cat autopkg/RecipeList.txt | tr '\n' ',')
+          fi
+          
+          docker run \
+            -v ${{ github.workspace }}:/workspace \
+            -e JAMF_URL=${{ secrets.JAMF_URL }} \
+            -e JAMF_USERNAME=${{ secrets.JAMF_USERNAME }} \
+            -e JAMF_PASSWORD=${{ secrets.JAMF_PASSWORD }} \
+            -e VIRUSTOTAL_API_KEY=${{ secrets.VIRUSTOTAL_API_KEY }} \
+            -e RECIPE_LIST="${RECIPE_LIST}" \
+            -e UPLOAD_ENABLED=${{ inputs.upload_to_jamf }} \
+            -e FORCE_UPDATE=${{ inputs.force_update }} \
+            -e TARGET_POLICY="${{ inputs.target_policy }}" \
+            --rm \
+            autopkg-runner:manual \
+            /workspace/scripts/manual_processor.py
+      
+      - name: Generate Report
+        if: always()
+        run: |
+          python scripts/utils/report_generator.py \
+            --app "${{ inputs.application }}" \
+            --status "${{ job.status }}" \
+            --output reports/manual-run-${{ github.run_id }}.json
+      
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: manual-run-${{ inputs.application }}-${{ github.run_id }}
+          path: |
+            reports/*.json
+            downloads/*.pkg
+            downloads/*.dmg
+          retention-days: 7
+      
+      - name: Create Summary
+        if: always()
+        run: |
+          echo "## Manual Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Application**: ${{ inputs.application }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Upload to Jamf**: ${{ inputs.upload_to_jamf }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Force Update**: ${{ inputs.force_update }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -f reports/manual-run-${{ github.run_id }}.json ]]; then
+            echo "### Processing Details" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat reports/manual-run-${{ github.run_id }}.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi

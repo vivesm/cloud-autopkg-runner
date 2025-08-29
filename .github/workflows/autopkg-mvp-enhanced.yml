@@ -1,0 +1,225 @@
+name: AutoPkg MVP Runner Enhanced
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: 'Skip Jamf upload (test mode)'
+        required: false
+        type: boolean
+        default: false
+      notify_email:
+        description: 'Send email notification'
+        required: false
+        type: boolean
+        default: true
+  
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  process-and-upload:
+    name: Download, Validate & Upload Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    outputs:
+      success_count: ${{ steps.process.outputs.success_count }}
+      failed_count: ${{ steps.process.outputs.failed_count }}
+      report_url: ${{ steps.upload.outputs.artifact_url }}
+      
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 📦 Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests pyyaml
+          sudo apt-get update && sudo apt-get install -y curl wget jq
+      
+      - name: 📥 Download and Validate Packages
+        id: process
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          # Run processing
+          if python scripts/download_and_validate.py; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+          fi
+          
+          # Extract statistics for output
+          if [ -f reports/results.json ]; then
+            SUCCESS=$(jq '[.apps[] | select(.status == "success")] | length' reports/results.json)
+            FAILED=$(jq '[.apps[] | select(.status == "failed")] | length' reports/results.json)
+            TOTAL=$(jq '.apps | length' reports/results.json)
+            
+            echo "success_count=$SUCCESS" >> $GITHUB_OUTPUT
+            echo "failed_count=$FAILED" >> $GITHUB_OUTPUT
+            echo "total_count=$TOTAL" >> $GITHUB_OUTPUT
+            
+            # Create summary for email
+            echo "SUMMARY=$SUCCESS/$TOTAL successful" >> $GITHUB_ENV
+          fi
+      
+      - name: 📤 Upload to Jamf Pro
+        if: steps.process.outputs.status == 'success' && inputs.skip_upload != true
+        env:
+          JAMF_URL: ${{ secrets.JAMF_URL }}
+          JAMF_USERNAME: ${{ secrets.JAMF_USERNAME }}
+          JAMF_PASSWORD: ${{ secrets.JAMF_PASSWORD }}
+        run: |
+          if [ -z "$JAMF_URL" ]; then
+            echo "⚠️  Jamf credentials not configured, skipping upload"
+            exit 0
+          fi
+          
+          python scripts/jamf_upload.py
+      
+      - name: 📊 Generate HTML Report
+        if: always()
+        run: |
+          python scripts/generate_html_report.py
+      
+      - name: 💾 Upload Artifacts
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: autopkg-report-${{ github.run_number }}
+          path: |
+            reports/*.json
+            reports/*.html
+          retention-days: 30
+      
+      - name: 📈 Generate GitHub Summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 📋 AutoPkg Run Summary
+          
+          | Metric | Value |
+          |--------|-------|
+          | **Date** | $(date -u '+%Y-%m-%d %H:%M UTC') |
+          | **Run** | #${{ github.run_number }} |
+          | **Success** | ${{ steps.process.outputs.success_count }} apps |
+          | **Failed** | ${{ steps.process.outputs.failed_count }} apps |
+          | **Trigger** | ${{ github.event_name }} |
+          
+          ### 📦 Package Details
+          EOF
+          
+          if [ -f reports/results.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            jq '.apps[] | {name: .name, status: .status, size_mb: .size_mb, virustotal: .virustotal.malicious}' reports/results.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📎 [Download Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  # Email notification job
+  notify:
+    name: Send Email Notification
+    needs: process-and-upload
+    runs-on: ubuntu-latest
+    if: always() && (github.event_name == 'schedule' || inputs.notify_email == true)
+    
+    steps:
+      - name: 📧 Send Email Report
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: |
+            AutoPkg Report - ${{ needs.process-and-upload.outputs.success_count }}/${{ needs.process-and-upload.outputs.total_count }} Successful
+          to: ${{ secrets.EMAIL_TO }}
+          from: AutoPkg Runner <${{ secrets.EMAIL_USERNAME }}>
+          body: |
+            AutoPkg Run Report
+            ==================
+            
+            Date: ${{ github.event.repository.updated_at }}
+            Repository: ${{ github.repository }}
+            Run Number: ${{ github.run_number }}
+            Status: ${{ job.status }}
+            
+            Results Summary:
+            - Successful: ${{ needs.process-and-upload.outputs.success_count }} packages
+            - Failed: ${{ needs.process-and-upload.outputs.failed_count }} packages
+            
+            View Full Report:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            Download Artifacts:
+            Check the workflow run page for downloadable reports and packages.
+            
+            ---
+            This is an automated message from AutoPkg Runner
+          
+  # Create issue for failures
+  create-issue:
+    name: Create Issue for Failures
+    needs: process-and-upload
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'schedule'
+    
+    steps:
+      - name: 🚨 Create Failure Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().split('T')[0];
+            const title = `🔴 AutoPkg Failed - ${today}`;
+            
+            // Check if issue already exists for today
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'autopkg-failure',
+              state: 'open'
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes(today)
+            );
+            
+            if (!existingIssue) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: `## AutoPkg Run Failed
+                
+                **Date:** ${new Date().toISOString()}
+                **Run:** [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+                **Failed Apps:** ${{ needs.process-and-upload.outputs.failed_count }}
+                
+                ### Required Actions:
+                - [ ] Review workflow logs
+                - [ ] Check app download URLs
+                - [ ] Verify SHA256 hashes
+                - [ ] Test VirusTotal API
+                - [ ] Confirm Jamf connectivity
+                
+                ### Logs
+                [View Full Logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+                `,
+                labels: ['autopkg-failure', 'automation']
+              });
+            }

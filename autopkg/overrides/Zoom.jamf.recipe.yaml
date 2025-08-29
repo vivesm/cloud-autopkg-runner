@@ -1,0 +1,55 @@
+Comment: Recipe override for Zoom with Jamf Pro upload
+Identifier: com.github.cloud-autopkg.jamf.Zoom
+ParentRecipe: com.github.autopkg.pkg.zoom
+MinimumVersion: '2.3'
+
+Input:
+  NAME: Zoom
+  CATEGORY: Communication
+  POLICY_CATEGORY: Testing
+  POLICY_NAME: 'Install Latest %NAME%'
+  POLICY_TEMPLATE: Policy-install-latest.xml
+  SELF_SERVICE_DISPLAY_NAME: 'Install Latest %NAME%'
+  SELF_SERVICE_DESCRIPTION: Zoom is a video conferencing platform.
+  UPDATE_PREDICATE: pkg_uploaded == False
+  REPLACE_POLICY: 'True'
+  REPLACE_PKG: 'True'
+  
+  # Security validation requirements
+  CODE_SIGN_VERIFICATION_EXPECTED_AUTHORITY_NAMES:
+    - 'Developer ID Installer: Zoom Video Communications, Inc. (BJ4HAAB9B3)'
+    - 'Developer ID Certification Authority'
+    - 'Apple Root CA'
+  
+  VIRUSTOTAL_ALWAYS_REPORT: 'true'
+  VIRUSTOTAL_MAX_THRESHOLD: 5
+
+Process:
+  - Processor: CodeSignatureVerifier
+    Arguments:
+      input_path: '%pathname%'
+      expected_authority_names: '%CODE_SIGN_VERIFICATION_EXPECTED_AUTHORITY_NAMES%'
+      
+  - Processor: VirusTotalAnalyzer
+    Arguments:
+      input_path: '%pathname%'
+      always_report: '%VIRUSTOTAL_ALWAYS_REPORT%'
+      max_threshold: '%VIRUSTOTAL_MAX_THRESHOLD%'
+      
+  - Processor: com.github.grahampugh.jamf-upload.processors/JamfPackageUploader
+    Arguments:
+      pkg_category: '%CATEGORY%'
+      replace_pkg: '%REPLACE_PKG%'
+      
+  - Processor: StopProcessingIf
+    Arguments:
+      predicate: '%UPDATE_PREDICATE%'
+      
+  - Processor: com.github.grahampugh.jamf-upload.processors/JamfPolicyUploader
+    Arguments:
+      policy_name: '%POLICY_NAME%'
+      policy_category: '%POLICY_CATEGORY%'
+      policy_template: '%POLICY_TEMPLATE%'
+      replace_policy: '%REPLACE_POLICY%'
+      
+  - Processor: EndOfCheckSummary

@@ -1,0 +1,212 @@
+name: AutoPkg MVP Runner
+
+on:
+  # Manual trigger with optional inputs
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: 'Skip Jamf upload (test mode)'
+        required: false
+        type: boolean
+        default: false
+      specific_app:
+        description: 'Process specific app only (leave empty for all)'
+        required: false
+        type: string
+        default: ''
+  
+  # Daily schedule at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  process-and-upload:
+    name: Download, Validate & Upload Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: 📦 Install Dependencies
+        run: |
+          echo "Installing Python packages..."
+          pip install --upgrade pip
+          pip install requests pyyaml
+          
+          echo "Installing system packages..."
+          sudo apt-get update
+          sudo apt-get install -y curl wget jq
+      
+      - name: 🔍 Display Configuration
+        run: |
+          echo "==================================="
+          echo "AutoPkg MVP Runner Configuration"
+          echo "==================================="
+          echo "Python Version: $(python --version)"
+          echo "Runner OS: ${{ runner.os }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run Number: ${{ github.run_number }}"
+          echo "Triggered by: ${{ github.event_name }}"
+          
+          if [ -n "${{ inputs.specific_app }}" ]; then
+            echo "Specific App: ${{ inputs.specific_app }}"
+          fi
+          
+          if [ "${{ inputs.skip_upload }}" == "true" ]; then
+            echo "Mode: TEST (skip upload)"
+          else
+            echo "Mode: PRODUCTION"
+          fi
+          
+          echo "==================================="
+      
+      - name: 📥 Download and Validate Packages
+        id: download
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        run: |
+          echo "Starting package processing..."
+          
+          # Run the download and validation script
+          if python scripts/download_and_validate.py; then
+            echo "✅ Package processing completed successfully"
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Package processing failed"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+      
+      - name: 📤 Upload to Jamf Pro
+        if: steps.download.outputs.status == 'success' && inputs.skip_upload != true
+        env:
+          JAMF_URL: ${{ secrets.JAMF_URL }}
+          JAMF_USERNAME: ${{ secrets.JAMF_USERNAME }}
+          JAMF_PASSWORD: ${{ secrets.JAMF_PASSWORD }}
+        run: |
+          echo "Starting Jamf Pro upload..."
+          
+          # Check if credentials are configured
+          if [ -z "$JAMF_URL" ] || [ -z "$JAMF_USERNAME" ] || [ -z "$JAMF_PASSWORD" ]; then
+            echo "⚠️  Jamf credentials not configured, skipping upload"
+            echo "   Please set JAMF_URL, JAMF_USERNAME, and JAMF_PASSWORD secrets"
+            exit 0
+          fi
+          
+          # Run the upload script
+          if python scripts/jamf_upload.py; then
+            echo "✅ Upload completed successfully"
+          else
+            echo "❌ Upload failed"
+            exit 1
+          fi
+      
+      - name: 📊 Generate Summary Report
+        if: always()
+        run: |
+          echo "## 📋 AutoPkg MVP Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🕐 Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔢 Run Number: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎯 Trigger: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f reports/results.json ]; then
+            echo "### 📦 Package Processing Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            jq '.' reports/results.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract summary statistics
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📈 Statistics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            SUCCESS_COUNT=$(jq '[.apps[] | select(.status == "success")] | length' reports/results.json)
+            FAILED_COUNT=$(jq '[.apps[] | select(.status == "failed")] | length' reports/results.json)
+            TOTAL_COUNT=$(jq '.apps | length' reports/results.json)
+            
+            echo "- ✅ Successful: $SUCCESS_COUNT / $TOTAL_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Failed: $FAILED_COUNT / $TOTAL_COUNT" >> $GITHUB_STEP_SUMMARY
+            
+            # Show individual app status
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📱 App Status" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| App | Status | VirusTotal | Size |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|--------|------------|------|" >> $GITHUB_STEP_SUMMARY
+            
+            jq -r '.apps[] | "| \(.name) | \(.status) | \(.virustotal.malicious // "N/A") malicious | \(.size_mb // "N/A") MB |"' reports/results.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No results.json file found" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: 💾 Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: autopkg-mvp-run-${{ github.run_number }}
+          path: |
+            reports/*.json
+            downloads/*.pkg
+            downloads/*.dmg
+          retention-days: 7
+          if-no-files-found: warn
+      
+      - name: 🔔 Send Notification (on failure)
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create an issue for scheduled run failures
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ AutoPkg MVP Run Failed - ${new Date().toISOString().split('T')[0]}`,
+              body: `## Scheduled Run Failure
+              
+              The scheduled AutoPkg MVP run has failed.
+              
+              **Details:**
+              - Workflow: ${context.workflow}
+              - Run: [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+              - Time: ${new Date().toISOString()}
+              
+              Please check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.
+              
+              ---
+              *This issue was automatically created by the AutoPkg MVP Runner*`,
+              labels: ['bug', 'automation']
+            });
+            
+            console.log(`Created issue #${issue.data.number}`);
+
+  # Optional: Clean up old artifacts
+  cleanup:
+    name: Cleanup Old Downloads
+    runs-on: ubuntu-latest
+    needs: process-and-upload
+    if: success() && github.event_name == 'schedule'
+    
+    steps:
+      - name: 🧹 Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 30
+          keep_minimum_runs: 10

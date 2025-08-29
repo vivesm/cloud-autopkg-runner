@@ -1,0 +1,34 @@
+{
+  "apps": [
+    {
+      "name": "GoogleChrome",
+      "filename": "GoogleChrome.pkg",
+      "version": "latest",
+      "url": "https://dl.google.com/chrome/mac/stable/accept_tos%3Dhttps%253A%252F%252Fwww.google.com%252Fintl%252Fen_ph%252Fchrome%252Fterms%252F%26_and_accept_tos%3Dhttps%253A%252F%252Fpolicies.google.com%252Fterms/GoogleChrome.pkg",
+      "sha256": "054e948f1ecfa7612a7f6ba99d225eb37d7f60682aa123b44e291058c595abf8",
+      "notes": "Google Chrome browser - update hash after first download"
+    },
+    {
+      "name": "Firefox",
+      "filename": "Firefox.dmg",
+      "version": "latest",
+      "url": "https://download.mozilla.org/?product=firefox-latest-ssl&os=osx&lang=en-US",
+      "sha256": "de41866c94d064a20cd787d89203c5f646fe0278da13c44605733ce205680965",
+      "notes": "Mozilla Firefox browser - update hash after first download"
+    },
+    {
+      "name": "Zoom",
+      "filename": "Zoom.pkg",
+      "version": "latest",
+      "url": "https://zoom.us/client/latest/Zoom.pkg",
+      "sha256": "96a494270ecfc139b909510e8fd1a6e259db018a38293f0fde4f851fd96adfe2",
+      "notes": "Zoom video conferencing - update hash after first download"
+    }
+  ],
+  "config": {
+    "virustotal_threshold": 5,
+    "jamf_category": "Testing",
+    "timeout_seconds": 300,
+    "retry_attempts": 3
+  }
+}
